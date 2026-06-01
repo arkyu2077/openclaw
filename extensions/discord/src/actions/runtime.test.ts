@@ -925,6 +925,40 @@ describe("handleDiscordMessagingAction", () => {
     expect(searchMessagesDiscord).not.toHaveBeenCalled();
   });
 
+  it("derives guildId from a single search channel and accepts query aliases", async () => {
+    fetchChannelInfoDiscord.mockResolvedValueOnce({
+      id: "222",
+      type: ChannelType.GuildText,
+      guild_id: "111",
+    });
+
+    await handleMessagingAction(
+      "searchMessages",
+      { channelId: "222", query: "canary", limit: 5 },
+      enableAllActions,
+    );
+
+    expect(searchMessagesDiscord).toHaveBeenCalledWith(
+      {
+        guildId: "111",
+        content: "canary",
+        channelIds: ["222"],
+        authorIds: undefined,
+        limit: 5,
+      },
+      { cfg: DISCORD_TEST_CFG },
+    );
+  });
+
+  it("explains how to scope Discord search when guildId cannot be resolved", async () => {
+    await expect(
+      handleMessagingAction("searchMessages", { query: "canary" }, enableAllActions),
+    ).rejects.toThrow(
+      "Discord message search requires guildId, or a single channelId so the guild can be resolved.",
+    );
+    expect(searchMessagesDiscord).not.toHaveBeenCalled();
+  });
+
   it("requires explicit Discord search targets when channels are allowlisted", async () => {
     const cfg = {
       channels: {

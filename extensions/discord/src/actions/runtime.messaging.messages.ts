@@ -47,6 +47,20 @@ function assertDiscordMessageListResult(value: unknown): Array<unknown> {
   );
 }
 
+function readDiscordGuildIdFromChannelInfo(value: unknown): string | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  for (const key of ["guild_id", "guildId"]) {
+    const candidate = record[key];
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  return undefined;
+}
+
 export async function handleDiscordMessageManagementAction(ctx: DiscordMessagingActionContext) {
   switch (ctx.action) {
     case "permissions": {
@@ -183,18 +197,31 @@ export async function handleDiscordMessageManagementAction(ctx: DiscordMessaging
       if (!ctx.isActionEnabled("search")) {
         throw new Error("Discord search is disabled.");
       }
-      const guildId = readStringParam(ctx.params, "guildId", {
-        required: true,
-      });
-      const content = readStringParam(ctx.params, "content", {
-        required: true,
-      });
+      let guildId = readStringParam(ctx.params, "guildId");
+      const content =
+        readStringParam(ctx.params, "content") ??
+        readStringParam(ctx.params, "query", {
+          required: true,
+          label: "query",
+        });
       const channelId = readStringParam(ctx.params, "channelId");
       const channelIds = readStringArrayParam(ctx.params, "channelIds");
       const authorId = readStringParam(ctx.params, "authorId");
       const authorIds = readStringArrayParam(ctx.params, "authorIds");
       const limit = readPositiveIntegerParam(ctx.params, "limit");
       const channelIdList = [...(channelIds ?? []), ...(channelId ? [channelId] : [])];
+      if (!guildId && channelIdList.length === 1) {
+        const channelInfo = await discordMessagingActionRuntime.fetchChannelInfoDiscord(
+          channelIdList[0],
+          ctx.withOpts(),
+        );
+        guildId = readDiscordGuildIdFromChannelInfo(channelInfo);
+      }
+      if (!guildId) {
+        throw new Error(
+          "Discord message search requires guildId, or a single channelId so the guild can be resolved.",
+        );
+      }
       if (channelIdList.length > 0) {
         for (const targetChannelId of channelIdList) {
           await ctx.assertReadTargetAllowed({ guildId, channelId: targetChannelId });

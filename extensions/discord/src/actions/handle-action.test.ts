@@ -545,4 +545,37 @@ describe("handleDiscordMessageAction", () => {
 
     expect(handleDiscordActionMock).not.toHaveBeenCalled();
   });
+
+  it("falls back to the current Discord channel for search actions", async () => {
+    const cfg = discordConfig();
+
+    await handleDiscordMessageAction({
+      action: "search",
+      params: {
+        query: "prior topic",
+        limit: 20,
+      },
+      cfg,
+      toolContext: {
+        currentChannelProvider: "discord",
+        currentChannelId: "channel:123",
+      },
+    });
+
+    expectDiscordActionCall({
+      payload: {
+        action: "searchMessages",
+        accountId: undefined,
+        guildId: undefined,
+        content: "prior topic",
+        query: "prior topic",
+        channelId: "channel:123",
+        channelIds: undefined,
+        authorId: undefined,
+        authorIds: undefined,
+        limit: 20,
+      },
+      cfg,
+    });
+  });
 });

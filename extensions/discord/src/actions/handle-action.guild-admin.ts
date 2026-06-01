@@ -426,17 +426,17 @@ export async function tryHandleDiscordMessageActionGuildAdmin(params: {
   }
 
   if (action === "search") {
-    const guildId = readStringParam(actionParams, "guildId", {
-      required: true,
-    });
-    const query = readStringParam(actionParams, "query", { required: true });
+    const channelId = readStringParam(actionParams, "channelId") ?? resolveChannelId();
     return await handleDiscordAction(
       {
         action: "searchMessages",
         accountId: accountId ?? undefined,
-        guildId,
-        content: query,
-        channelId: readStringParam(actionParams, "channelId"),
+        guildId: readStringParam(actionParams, "guildId"),
+        content:
+          readStringParam(actionParams, "content") ??
+          readStringParam(actionParams, "query", { required: true }),
+        query: readStringParam(actionParams, "query"),
+        channelId,
         channelIds: readStringArrayParam(actionParams, "channelIds"),
         authorId: readStringParam(actionParams, "authorId"),
         authorIds: readStringArrayParam(actionParams, "authorIds"),
