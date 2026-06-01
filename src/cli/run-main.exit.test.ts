@@ -383,6 +383,20 @@ describe("runCli exit behavior", () => {
     expect(progressDoneMock).toHaveBeenCalledTimes(1);
   });
 
+  it("suppresses the startup spinner for --json CLI output", async () => {
+    tryRouteCliMock.mockResolvedValueOnce(false);
+    const parseAsync = vi.fn().mockResolvedValueOnce(undefined);
+    buildProgramMock.mockReturnValueOnce({
+      commands: [{ name: () => "sessions", aliases: () => [] }],
+      parseAsync,
+    });
+
+    await runCli(["node", "openclaw", "sessions", "--json"]);
+
+    expect(createCliProgressMock).not.toHaveBeenCalled();
+    expect(progressDoneMock).not.toHaveBeenCalled();
+  });
+
   it("pauses non-tty stdin after full CLI command completion", async () => {
     tryRouteCliMock.mockResolvedValueOnce(false);
     const parseAsync = vi.fn().mockResolvedValueOnce(undefined);
