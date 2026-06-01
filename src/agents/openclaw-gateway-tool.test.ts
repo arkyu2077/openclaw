@@ -725,4 +725,30 @@ describe("gateway tool", () => {
       ?.schema;
     expect(schema?.properties).toBeUndefined();
   });
+
+  it("returns a structured result when config schema lookup misses", async () => {
+    const tool = requireGatewayTool();
+    const error = new Error("config schema path not found") as Error & {
+      gatewayCode?: string;
+    };
+    error.gatewayCode = "INVALID_REQUEST";
+    callGatewayToolMock.mockImplementationOnce(async () => {
+      throw error;
+    });
+
+    const result = await tool.execute("call6", {
+      action: "config.schema.lookup",
+      path: "agents.main.authorizedSenders",
+    });
+
+    expect(gatewayCall("config.schema.lookup")[2]).toEqual({
+      path: "agents.main.authorizedSenders",
+    });
+    expect(result.details).toEqual({
+      ok: false,
+      code: "schema_path_not_found",
+      path: "agents.main.authorizedSenders",
+      error: "config schema path not found",
+    });
+  });
 });

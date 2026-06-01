@@ -475,8 +475,28 @@ export function createGatewayTool(opts?: {
           required: true,
           label: "path",
         });
-        const result = await callGatewayTool("config.schema.lookup", gatewayOpts, { path });
-        return jsonResult({ ok: true, result });
+        try {
+          const result = await callGatewayTool("config.schema.lookup", gatewayOpts, { path });
+          return jsonResult({ ok: true, result });
+        } catch (error) {
+          const gatewayCode =
+            error && typeof error === "object" && "gatewayCode" in error
+              ? (error as { gatewayCode?: unknown }).gatewayCode
+              : undefined;
+          const message = error instanceof Error ? error.message : String(error);
+          if (
+            gatewayCode === "INVALID_REQUEST" &&
+            message.toLowerCase().includes("config schema path not found")
+          ) {
+            return jsonResult({
+              ok: false,
+              code: "schema_path_not_found",
+              path,
+              error: "config schema path not found",
+            });
+          }
+          throw error;
+        }
       }
       if (action === "config.apply") {
         const { raw, baseHash, snapshotConfig, sessionKey, note, restartDelayMs } =
