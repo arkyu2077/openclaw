@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AssistantMessage } from "../types.js";
-import { isRetryableAssistantError } from "./retry.js";
+import { isRetryableAssistantError, resolveAssistantRetryDelayMs } from "./retry.js";
 
 function errorMessage(message: string): AssistantMessage {
   return {
@@ -22,6 +22,21 @@ function errorMessage(message: string): AssistantMessage {
     timestamp: 1,
   };
 }
+
+describe("resolveAssistantRetryDelayMs", () => {
+  it("uses server Retry-After when it exceeds exponential backoff", () => {
+    expect(resolveAssistantRetryDelayMs({ retryAfterSeconds: 30 }, 2_000)).toBe(30_000);
+  });
+
+  it("keeps exponential backoff when server Retry-After is shorter", () => {
+    expect(resolveAssistantRetryDelayMs({ retryAfterSeconds: 1 }, 4_000)).toBe(4_000);
+  });
+
+  it("ignores missing or invalid Retry-After values", () => {
+    expect(resolveAssistantRetryDelayMs({}, 8_000)).toBe(8_000);
+    expect(resolveAssistantRetryDelayMs({ retryAfterSeconds: Number.NaN }, 8_000)).toBe(8_000);
+  });
+});
 
 describe("isRetryableAssistantError", () => {
   it.each([

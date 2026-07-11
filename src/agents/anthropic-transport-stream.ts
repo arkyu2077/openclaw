@@ -71,8 +71,15 @@ import {
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./copilot-dynamic-headers.js";
 import { parseJsonObjectPreservingUnsafeIntegers } from "./json-unsafe-integers.js";
 import { resolveProviderEndpoint } from "./provider-attribution.js";
+import {
+  asObject,
+  extractProviderRequestId,
+  formatProviderErrorPayload,
+  formatProviderHttpErrorMessage,
+  trimToUndefined,
+} from "./provider-http-errors.js";
 import { unwrapModelHeaderSentinelsForProviderEgress } from "./provider-secret-egress.js";
-import { buildGuardedModelFetch } from "./provider-transport-fetch.js";
+import { buildGuardedModelFetch, parseRetryAfterSeconds } from "./provider-transport-fetch.js";
 import type { StreamFn } from "./runtime/index.js";
 import { transformTransportMessages } from "./transport-message-transform.js";
 import {
@@ -836,10 +843,7 @@ function createAnthropicMessagesClient(params: {
           signal: options?.signal,
         });
         if (!response.ok) {
-          const detail = await readAnthropicMessagesErrorBodySnippet(response);
-          throw new Error(
-            detail || `Anthropic Messages request failed with HTTP ${response.status}`,
-          );
+          throw await createAnthropicMessagesHttpError(response);
         }
         if (!response.body) {
           return;
@@ -850,10 +854,17 @@ function createAnthropicMessagesClient(params: {
   };
 }
 
-async function readAnthropicMessagesErrorBodySnippet(response: Response): Promise<string> {
+type AnthropicHttpErrorInfo = {
+  detail?: string;
+  code?: string;
+  type?: string;
+  body?: string;
+};
+
+async function readAnthropicMessagesErrorInfo(response: Response): Promise<AnthropicHttpErrorInfo> {
   try {
-    return (
-      (await readResponseTextSnippet(response, {
+    const body = trimToUndefined(
+      await readResponseTextSnippet(response, {
         maxBytes: ANTHROPIC_MESSAGES_ERROR_BODY_MAX_BYTES,
         maxChars: ANTHROPIC_MESSAGES_ERROR_BODY_MAX_CHARS,
         chunkTimeoutMs: ANTHROPIC_MESSAGES_ERROR_BODY_READ_IDLE_TIMEOUT_MS,
@@ -861,17 +872,59 @@ async function readAnthropicMessagesErrorBodySnippet(response: Response): Promis
           new Error(
             `Anthropic Messages error response stalled: no data received for ${chunkTimeoutMs}ms`,
           ),
-      })) ?? ""
+      }),
     );
-  } catch (error: unknown) {
+    if (!body) {
+      return {};
+    }
+    try {
+      const parsed = JSON.parse(body) as unknown;
+      const root = asObject(parsed);
+      const subject = asObject(root?.error) ?? root;
+      return {
+        detail: formatProviderErrorPayload(parsed) ?? body,
+        code: trimToUndefined(subject?.code) ?? trimToUndefined(subject?.status),
+        type: trimToUndefined(subject?.type),
+        body,
+      };
+    } catch {
+      return { detail: body, body };
+    }
+  } catch (error) {
     if (
       error instanceof Error &&
       error.message.startsWith("Anthropic Messages error response stalled:")
     ) {
-      return error.message;
+      return { detail: error.message, body: error.message };
     }
-    return "";
+    return {};
   }
+}
+
+async function createAnthropicMessagesHttpError(response: Response): Promise<Error> {
+  const info = await readAnthropicMessagesErrorInfo(response);
+  const requestId = extractProviderRequestId(response);
+  const error = new Error(
+    info.detail ??
+      formatProviderHttpErrorMessage({
+        label: "Anthropic Messages request failed",
+        status: response.status,
+        statusPrefix: "HTTP ",
+      }),
+  );
+  Object.assign(error, {
+    status: response.status,
+    statusCode: response.status,
+    ...(requestId ? { requestId } : {}),
+    ...(info.code ? { code: info.code, errorCode: info.code } : {}),
+    ...(info.type ? { type: info.type, errorType: info.type } : {}),
+    ...(info.body ? { body: info.body, errorBody: info.body } : {}),
+  });
+  const retryAfterSeconds = parseRetryAfterSeconds(response.headers);
+  if (retryAfterSeconds !== undefined) {
+    Object.assign(error, { retryAfterSeconds });
+  }
+  return error;
 }
 
 function createAnthropicTransportClient(params: {

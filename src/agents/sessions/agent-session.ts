@@ -33,7 +33,7 @@ import type {
   Model,
   TextContent,
 } from "../../llm/types.js";
-import { isRetryableAssistantError } from "../../llm/utils/retry.js";
+import { isRetryableAssistantError, resolveAssistantRetryDelayMs } from "../../llm/utils/retry.js";
 import { attachRuntimeUserTurnTranscriptContext } from "../../sessions/user-turn-transcript-runtime-context.js";
 import type {
   PersistedUserTurnMessage,
@@ -2672,7 +2672,10 @@ export class AgentSession {
       return false;
     }
 
-    const delayMs = settings.baseDelayMs * 2 ** (this.retryCount - 1);
+    const delayMs = resolveAssistantRetryDelayMs(
+      message,
+      settings.baseDelayMs * 2 ** (this.retryCount - 1),
+    );
 
     this.emit({
       type: "auto_retry_start",

@@ -1,3 +1,4 @@
+import { clampTimerTimeoutMs } from "@openclaw/normalization-core/number-coercion";
 import type { AssistantMessage } from "../types.js";
 
 function buildProviderErrorPattern(patterns: readonly string[]): RegExp {
@@ -48,6 +49,19 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
   "try your request again",
   "please retry your request",
 ]);
+
+export function resolveAssistantRetryDelayMs(
+  message: Pick<AssistantMessage, "retryAfterSeconds">,
+  exponentialDelayMs: number,
+): number {
+  const retryAfterDelayMs =
+    typeof message.retryAfterSeconds === "number" && Number.isFinite(message.retryAfterSeconds)
+      ? clampTimerTimeoutMs(message.retryAfterSeconds * 1000, 0, 0)
+      : undefined;
+  return retryAfterDelayMs !== undefined
+    ? Math.max(exponentialDelayMs, retryAfterDelayMs)
+    : exponentialDelayMs;
+}
 
 /** Classify transient provider/transport failures for outer retry policy. */
 export function isRetryableAssistantError(message: AssistantMessage): boolean {

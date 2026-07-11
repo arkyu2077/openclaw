@@ -12,9 +12,13 @@ const { buildGuardedModelFetchMock, guardedFetchMock } = vi.hoisted(() => ({
   guardedFetchMock: vi.fn(),
 }));
 
-vi.mock("./provider-transport-fetch.js", () => ({
-  buildGuardedModelFetch: buildGuardedModelFetchMock,
-}));
+vi.mock("./provider-transport-fetch.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./provider-transport-fetch.js")>();
+  return {
+    ...actual,
+    buildGuardedModelFetch: buildGuardedModelFetchMock,
+  };
+});
 
 let createAnthropicMessagesTransportStreamFn: typeof import("./anthropic-transport-stream.js").createAnthropicMessagesTransportStreamFn;
 
@@ -1277,6 +1281,35 @@ describe("anthropic transport stream", () => {
 
     expect(result.stopReason).toBe("error");
     expect(result.errorMessage).toBe("OpenClaw transport error: malformed_streaming_fragment");
+  });
+
+  it("preserves HTTP status and Retry-After on Anthropic transport failures", async () => {
+    guardedFetchMock.mockResolvedValueOnce(
+      new Response('{"error":{"type":"rate_limit_error","message":"Slow down"}}', {
+        status: 429,
+        headers: {
+          "content-type": "application/json",
+          "retry-after": "30",
+          "request-id": "req_retry_after",
+        },
+      }),
+    );
+
+    const result = await runTransportStream(
+      makeAnthropicTransportModel(),
+      {
+        messages: [{ role: "user", content: "hello" }],
+      } as AnthropicStreamContext,
+      {
+        apiKey: "sk-ant-api",
+      } as AnthropicStreamOptions,
+    );
+
+    expect(result.stopReason).toBe("error");
+    expect(result.status).toBe(429);
+    expect(result.retryAfterSeconds).toBe(30);
+    expect(result.errorType).toBe("rate_limit_error");
+    expect(result.errorMessage).toBe("Slow down [type=rate_limit_error]");
   });
 
   it.each([
